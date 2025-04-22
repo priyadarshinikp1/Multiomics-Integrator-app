@@ -46,7 +46,7 @@ run_enrichment = st.sidebar.checkbox("Run Enrichment Analyses", value=True)
 show_network = st.sidebar.checkbox("Show Network Visualization", value=True)
 show_association_table = st.sidebar.checkbox("Show Association Table", value=True)
 
-num_pathways_to_show = int(st.sidebar.slider("Number of Pathways to Display in Network", min_value=1, max_value=50, value=10))
+num_pathways_to_show = int(st.sidebar.slider("Number of Pathways to Display in Network", min_value=1, max_value=100, value=10))
 
 # Filtering and Integration
 st.header("🎛️ Filter & Integrate")
