@@ -1,260 +1,290 @@
-import streamlit as st
 import pandas as pd
-import numpy as np
-import plotly.express as px
-from pyvis.network import Network
+import streamlit as st
 import networkx as nx
 from gseapy import enrichr
-from sklearn.decomposition import PCA
-import umap
+from pyvis.network import Network
 import tempfile
-import os
-import requests
+import streamlit.components.v1 as components
+from bs4 import BeautifulSoup
 
-st.set_page_config(page_title="Multi-Omics App", layout="wide")
-st.title("🧬 Multi-Omics Integration App")
+st.set_page_config(page_title="Int_Enridb App", layout="wide")
+st.image("https://raw.githubusercontent.com/priyadarshinikp1/int_enri_db/main/logo.png", width=200)
+st.title("🧬 Omics Integration & Over-Representation Explorer - Vizzhy")
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("**👨‍💻 Created by:PRIYADARSHINI")
+    st.markdown("[LinkedIn](www.linkedin.com/in/priyadarshini24) | [GitHub](https://github.com/priyadarshinikp1)")
 
-# Upload files
-genomics = st.file_uploader("Upload Genomics CSV", type="csv")
-transcriptomics = st.file_uploader("Upload Transcriptomics CSV", type="csv")
-proteomics = st.file_uploader("Upload Proteomics CSV", type="csv")
+# --- File Upload Section ---
+st.sidebar.header("📁 Upload Your Omics Data")
+genomics_file = st.sidebar.file_uploader("Upload Genomics CSV", type="csv")
+transcriptomics_file = st.sidebar.file_uploader("Upload Transcriptomics CSV", type="csv")
+proteomics_file = st.sidebar.file_uploader("Upload Proteomics CSV", type="csv")
 
-# Show previews
-if genomics:
-    gdf = pd.read_csv(genomics)
-    st.subheader("Genomics Data")
-    st.dataframe(gdf.head())
+if not all([genomics_file, transcriptomics_file, proteomics_file]):
+    st.warning("Please upload all three omics files to proceed.")
+    st.stop()
 
-if transcriptomics:
-    tdf = pd.read_csv(transcriptomics)
-    st.subheader("Transcriptomics Data")
-    st.dataframe(tdf.head())
+# --- Load Datasets ---
+genomics_data = pd.read_csv(genomics_file)
+transcriptomics_data = pd.read_csv(transcriptomics_file)
+proteomics_data = pd.read_csv(proteomics_file)
 
-if proteomics:
-    pdf = pd.read_csv(proteomics)
-    st.subheader("Proteomics Data")
-    st.dataframe(pdf.head())
+# --- Extract and Process Genes ---
+genomics_genes = set(genomics_data['Gene'].str.upper())
+transcriptomics_genes = set(transcriptomics_data['Gene'].str.upper())
+proteomics_genes = set(proteomics_data['Gene'].str.upper())
 
-# Sidebar controls
-st.sidebar.header("⚙️ Settings")
-cadd_thresh = float(st.sidebar.text_input("Min CADD Score (Genomics)", value="20"))
-logfc_thresh = float(st.sidebar.text_input("Min |logFC| (Transcriptomics)", value="1"))
-t_pval_thresh = float(st.sidebar.text_input("Max p-value (Transcriptomics)", value="0.05"))
-p_intensity_thresh = float(st.sidebar.text_input("Min Intensity (Proteomics)", value="1000"))
+common_genes = list(genomics_genes & transcriptomics_genes & proteomics_genes)
+st.success(f"✅ Found {len(common_genes)} common genes across all omics layers.")
 
-run_enrichment = st.sidebar.checkbox("Run Enrichment Analyses", value=True)
-show_network = st.sidebar.checkbox("Show Network Visualization", value=True)
-show_association_table = st.sidebar.checkbox("Show Association Table", value=True)
+# --- Over-Representation Libraries ---
+libraries = [
+    "HMDB_Metabolites", "DisGeNET", "OMIM_Disease",
+    "KEGG_2021_Human", "Reactome_2016",
+    "TRANSFAC_and_JASPAR_PWMs", "GO_Biological_Process_2021", "KEA_2015"
+]
 
-num_pathways_to_show = int(st.sidebar.slider("Number of Pathways to Display in Network", min_value=1, max_value=100, value=10))
+lib_to_type = {
+    "HMDB_Metabolites": "metabolite",
+    "DisGeNET": "disease",
+    "OMIM_Disease": "disease",
+    "KEGG_2021_Human": "pathway",
+    "Reactome_2016": "pathway",
+    "TRANSFAC_and_JASPAR_PWMs": "regulator",
+    "GO_Biological_Process_2021": "process",
+    "KEA_2015": "enzyme"
+}
 
-# Filtering and Integration
-st.header("🎛️ Filter & Integrate")
-
-if genomics and transcriptomics and proteomics:
+# --- Perform Over-Representation Analysis ---
+st.header("🧠 Over-Representation Analysis Results")
+results = {}
+for lib in libraries:
     try:
-        gdf_filtered = gdf[gdf['CADD'] >= cadd_thresh]
-        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) & (tdf['logFC'].abs() >= logfc_thresh)]
-        pdf_filtered = pdf[pdf['Intensity'] >= p_intensity_thresh]
+        ora = enrichr(gene_list=common_genes, gene_sets=lib, outdir=None)
+        results[lib] = ora.results
+        st.success(f"✓ Over-Representation completed: {lib}")
+    except Exception as e:
+        st.warning(f"[ERROR] {lib}: {e}")
 
-        st.write(f"✅ Genomics filtered: {len(gdf_filtered)}")
-        st.write(f"✅ Transcriptomics filtered: {len(tdf_filtered)}")
-        st.write(f"✅ Proteomics filtered: {len(pdf_filtered)}")
+# --- Display Top ORA Terms ---
+for lib, df in results.items():
+    st.subheader(f"{lib} - Top Results")
+    st.dataframe(df[['Term', 'P-value', 'Adjusted P-value', 'Genes']].head(10))
 
-        union_genes = set(gdf_filtered['Gene']) | set(tdf_filtered['Gene'])
+# === NETWORK ===
+top_n = st.slider("Select number of top terms to visualize:", 5, 50, 5)
+degree_threshold = st.slider("Minimum node degree to include:", 1, 10, 1)
 
-        def extract_uniprot_ids(protein_series):
-            ids = set()
-            for entry in protein_series.dropna():
-                for pid in str(entry).split(";"):
-                    pid = pid.strip()
-                    if pid:
-                        ids.add(pid)
-            return ids
+filtered_results = {
+    lib: df.sort_values("P-value").head(top_n)
+    for lib, df in results.items()
+}
 
-        def map_uniprot_to_gene(uniprot_ids):
-            mapping = {}
-            ids = list(uniprot_ids)
-            for i in range(0, len(ids), 100):
-                chunk = ids[i:i+100]
-                query = " OR ".join([f"accession:{id_}" for id_ in chunk])
-                url = f"https://rest.uniprot.org/uniprotkb/search?query={query}&fields=accession,gene_names&format=tsv"
-                try:
-                    r = requests.get(url)
-                    if r.status_code == 200:
-                        lines = r.text.strip().split('\n')[1:]
-                        for line in lines:
-                            acc, genes = line.split('\t')
-                            mapping[acc] = genes.split()[0] if genes else acc
-                except Exception as e:
-                    print(f"Error with UniProt API chunk: {e}")
-            return mapping
+legend_items = {
+    "Gene": 'rgb(169,169,169)',
+    "Protein": 'rgb(138,43,226)',
+    "Enzyme": 'rgb(255,165,0)',
+    "Metabolite": 'rgb(152,251,152)',
+    "Pathway": 'rgb(135,206,250)',
+    "Process": 'rgb(255,182,193)',
+    "Disease": 'rgb(255,99,71)',
+    "Regulator": 'rgb(205,133,63)',
+}
 
-        st.info("🔄 Mapping UniProt IDs to gene names via UniProt API...")
-        unique_uniprot_ids = extract_uniprot_ids(pdf_filtered['Protein'])
-        uniprot_gene_map = map_uniprot_to_gene(unique_uniprot_ids)
+type_color_map = {
+    "gene": legend_items["Gene"],
+    "protein": legend_items["Protein"],
+    "enzyme": legend_items["Enzyme"],
+    "metabolite": legend_items["Metabolite"],
+    "pathway": legend_items["Pathway"],
+    "process": legend_items["Process"],
+    "disease": legend_items["Disease"],
+    "regulator": legend_items["Regulator"],
+    "term": "rgb(200,200,200)"
+}
 
-        expanded_rows = []
-        for _, row in pdf_filtered.iterrows():
-            protein_ids = str(row['Protein']).split(';')
-            for pid in protein_ids:
-                pid = pid.strip()
-                if pid:
-                    gene = uniprot_gene_map.get(pid, None)
-                    if gene:
-                        expanded_rows.append({'Protein': pid, 'GeneName': gene})
+st.subheader("🧩 Interactive Omics Network")
 
-        expanded_protein_df = pd.DataFrame(expanded_rows)
+try:
+    net = Network(height='800px', width='100%', notebook=False, directed=False)
+    net.force_atlas_2based()
+    net.show_buttons(filter_=['physics'])
 
-        if not expanded_protein_df.empty and 'GeneName' in expanded_protein_df.columns:
-            protein_gene_map = dict(zip(expanded_protein_df['Protein'], expanded_protein_df['GeneName']))
-        else:
-            st.warning("⚠️ No proteins could be mapped to gene names. Network may be incomplete.")
-            protein_gene_map = {}
+    y_pos = 0
+    for label, color in legend_items.items():
+        net.add_node(f"legend_{label}", label=label, shape='box', color=color,
+                     size=20, x=-1000, y=y_pos, physics=False, fixed=True)
+        y_pos -= 50
 
-        st.write(f"🧪 Mapped {len(expanded_protein_df)} proteins to genes")
-        st.dataframe(expanded_protein_df.head())
+    temp_graph = nx.Graph()
+    for gene in common_genes:
+        temp_graph.add_node(gene, type="gene")
 
-        all_entities = union_genes | set(protein_gene_map.values())
-        st.success(f"🔗 Unique genes/proteins across layers: {len(all_entities)}")
-        st.dataframe(pd.DataFrame({'Genes/Proteins': list(all_entities)}))
+    for lib, df in filtered_results.items():
+        node_type = lib_to_type.get(lib, "term")
+        for _, row in df.iterrows():
+            term = row['Term']
+            genes = [g.strip().upper() for g in row['Genes'].split(';')]
+            temp_graph.add_node(term, type=node_type)
+            for gene in genes:
+                if gene in common_genes:
+                    temp_graph.add_edge(gene, term)
 
-        results = {}
-        raw_assoc_data = []
+    for _, row in proteomics_data.iterrows():
+        gene = row['Gene'].strip().upper()
+        protein = row['Protein'].strip()
+        if gene in temp_graph.nodes:
+            temp_graph.add_node(protein, type="protein")
+            temp_graph.add_edge(gene, protein)
 
-        if run_enrichment:
-            st.header("📊 Enrichment Analyses")
-            libraries = {
-                "Reactome Pathways": "Reactome_2016",
-                "Disease Associations": "DisGeNET",
-                "HMDB Metabolites": "HMDB_Metabolites"
-            }
+    nodes_to_keep = [n for n, d in temp_graph.degree() if d >= degree_threshold]
+    temp_graph = temp_graph.subgraph(nodes_to_keep)
 
-            for name, lib in libraries.items():
-                try:
-                    gene_list_clean = [str(g).strip() for g in union_genes if pd.notna(g) and str(g).strip()]
-                    enr = enrichr(gene_list=gene_list_clean, gene_sets=lib, outdir=None)
-                    if enr.results.empty:
-                        st.warning(f"⚠️ No results from {name}")
-                        continue
-                    df = enr.results.copy()
-                    df['-log10(pval)'] = -np.log10(df['P-value'])
-                    df = df.rename(columns={"Term": "Pathway", "Genes": "Genes_Involved"})
-                    results[name] = df
+    for node in temp_graph.nodes:
+        n_type = temp_graph.nodes[node].get("type", "term")
+        net.add_node(
+            node,
+            label=node,
+            color=type_color_map.get(n_type, "gray"),
+            size=15 if n_type == "gene" else 25
+        )
 
-                    st.subheader(f"📋 {name} - Top Results")
-                    st.dataframe(df[['Pathway', 'P-value', 'Adjusted P-value', 'Overlap', 'Genes_Involved']].head(10))
+    for s, t in temp_graph.edges:
+        net.add_edge(s, t)
 
-                    fig = px.bar(
-                        df.head(10),
-                        x="Pathway",
-                        y="-log10(pval)",
-                        title=f"Top 10 {name}",
-                        labels={"Pathway": "Term", "-log10(pval)": "-log10(p)"},
-                    )
-                    st.plotly_chart(fig)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
+        net.save_graph(tmp_file.name)
 
-                except Exception as e:
-                    st.error(f"Error in {name} enrichment: {e}")
+        with open(tmp_file.name, 'r', encoding='utf-8') as f:
+            html = f.read()
 
-        if show_network and results:
-            st.subheader("🧠 Interactive Omics Network")
-            try:
-                net = Network(height='800px', width='100%', notebook=False, directed=False)
-                net.force_atlas_2based()
-                net.show_buttons(filter_=['physics'])
+        soup = BeautifulSoup(html, 'html.parser')
+        script_tag = soup.find_all("script")[-1]
 
-                legend_items = {
-                    "Gene": 'rgb(169,169,169)',
-                    "Protein": 'rgb(255,215,0)',
-                    "Pathway": 'rgb(135,206,250)',
-                    "Metabolite": 'rgb(152,251,152)',
-                    "Disease": 'rgb(240,128,128)'
-                }
+        highlight_js = """
+        <script type=\"text/javascript\">
+        network.on(\"click\", function (params) {
+            if (params.nodes.length === 0) return;
+            var clickedNodeId = params.nodes[0];
+            nodes.update(
+                nodes.get().map(function (node) {
+                    return {
+                        id: node.id,
+                        color: node.originalColor || node.color
+                    };
+                })
+            );
+            var connectedNodes = network.getConnectedNodes(clickedNodeId);
+            connectedNodes.push(clickedNodeId);
+            nodes.update(
+                connectedNodes.map(function (id) {
+                    var node = nodes.get(id);
+                    node.originalColor = node.color;
+                    return {
+                        id: id,
+                        color: '#FFFF00'
+                    };
+                })
+            );
+        });
+        </script>
+        """
+        soup.body.append(BeautifulSoup(highlight_js, 'html.parser'))
 
-                y_pos = 0
-                for label, color in legend_items.items():
-                    net.add_node(f"legend_{label}", label=label, shape='box', color=color, size=20, x=-1000, y=y_pos, physics=False, fixed=True)
-                    y_pos -= 50
+        updated_html_path = tmp_file.name.replace(".html", "_highlight.html")
+        with open(updated_html_path, "w", encoding='utf-8') as f:
+            f.write(str(soup))
 
-                color_map = {
-                    "Reactome Pathways": "rgb(135,206,250)",
-                    "Disease Associations": "rgb(240,128,128)",
-                    "HMDB Metabolites": "rgb(152,251,152)"
-                }
+        components.html(open(updated_html_path, 'r', encoding='utf-8').read(), height=800)
 
-                for name, df in results.items():
-                    color = color_map.get(name, "gray")
-                    for _, row in df.head(num_pathways_to_show).iterrows():
-                        term = row['Pathway']
-                        net.add_node(term, label=term, color=color)
-                        for gene in row['Genes_Involved'].split(';'):
-                            gene = gene.strip()
-                            if not gene:
-                                continue
-                            net.add_node(gene, label=gene, color='rgb(169,169,169)')
-                            net.add_edge(gene, term)
+except Exception as e:
+    st.error(f"Network rendering failed: {e}")
 
-                            matched_proteins = [prot for prot, gname in protein_gene_map.items() if gname == gene]
-                            for prot in matched_proteins:
-                                net.add_node(prot, label=prot, color='rgb(255,215,0)')
-                                net.add_edge(gene, prot)
 
-                            raw_assoc_data.append({
-                                'Gene': gene,
-                                'Protein': ';'.join(matched_proteins) if matched_proteins else '',
-                                'Pathway': term if name == 'Reactome Pathways' else '',
-                                'Metabolite': term if name == 'HMDB Metabolites' else '',
-                                'Disease': term if name == 'Disease Associations' else ''
-                            })
 
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
-                    net.save_graph(tmp_file.name)
-                    st.components.v1.html(open(tmp_file.name, 'r', encoding='utf-8').read(), height=800)
+# === SUMMARY TABLE OF ALL ASSOCIATIONS ===
+st.subheader("🧾 Summary Table of Gene Associations")
 
-            except Exception as e:
-                st.error(f"Network rendering failed: {e}")
+# Initialize summary dictionary
+summary_dict = {gene: {
+    "Transcription Factor": [],
+    "Protein": [],
+    "Enzyme": [],
+    "Metabolite": [],
+    "Pathway": [],
+    "Process": [],
+    "Disease": []
+} for gene in common_genes}
 
-        if show_association_table and raw_assoc_data:
-            df = pd.DataFrame(raw_assoc_data)
-            assoc_df = df.groupby('Gene').agg({
-                'Protein': lambda x: ';'.join(set(filter(None, x))),
-                'Pathway': lambda x: ';'.join(set(filter(None, x))),
-                'Disease': lambda x: ';'.join(set(filter(None, x))),
-                'Metabolite': lambda x: ';'.join(set(filter(None, x)))
-            }).reset_index()
+# Fill in the enrichment-based associations
+# Fill in the enrichment-based associations
+for lib, df in results.items():
+    assoc_type = lib_to_type.get(lib, None)
+    if not assoc_type:
+        continue
+    for _, row in df.iterrows():
+        term = row["Term"]
+        # Filter out mouse or non-human terms
+        if any(x in term.lower() for x in ["mouse", "mus musculus", "mmu", "murine"]):
+            continue
+        genes = [g.strip().upper() for g in row["Genes"].split(";")]
+        for gene in genes:
+            if gene in summary_dict:
+                if assoc_type == "regulator":
+                    summary_dict[gene]["Transcription Factor"].append(term)
+                elif assoc_type == "enzyme":
+                    summary_dict[gene]["Enzyme"].append(term)
+                elif assoc_type == "metabolite":
+                    summary_dict[gene]["Metabolite"].append(term)
+                elif assoc_type == "pathway":
+                    summary_dict[gene]["Pathway"].append(term)
+                elif assoc_type == "process":
+                    summary_dict[gene]["Process"].append(term)
+                elif assoc_type == "disease":
+                    summary_dict[gene]["Disease"].append(term)
 
-            assoc_df['non_nulls'] = assoc_df.notnull().sum(axis=1)
-            assoc_df = assoc_df.sort_values(by='non_nulls', ascending=False).drop(columns='non_nulls')
 
-            st.subheader("📄 Gene-Protein-Term Association Summary")
-            st.dataframe(assoc_df)
+# Fill in proteomics-based associations
+for _, row in proteomics_data.iterrows():
+    gene = row['Gene'].strip().upper()
+    protein = row['Protein'].strip()
+    if gene in summary_dict:
+        summary_dict[gene]["Protein"].append(protein)
 
-        # 🧪 Dimensionality Reduction: PCA + UMAP
-        if transcriptomics:
-            st.header("PCA and UMAP")
-            try:
-                expr_data = tdf.dropna()
-                feature_cols = [col for col in expr_data.columns if expr_data[col].dtype != 'object']
-                X = expr_data[feature_cols]
+# Convert to DataFrame
+summary_df = pd.DataFrame.from_dict(summary_dict, orient='index').reset_index()
+summary_df.rename(columns={'index': 'Gene'}, inplace=True)
 
-                if X.shape[0] > 2 and X.shape[1] > 2:
-                    pca = PCA(n_components=2)
-                    pca_result = pca.fit_transform(X)
-                    pca_df = pd.DataFrame(pca_result, columns=["PC1", "PC2"])
-                    st.subheader("PCA Plot")
-                    st.plotly_chart(px.scatter(pca_df, x="PC1", y="PC2", title="PCA"))
+# Optional: Join list values into semicolon-separated strings
+for col in summary_df.columns[1:]:
+    summary_df[col] = summary_df[col].apply(lambda x: '; '.join(set(x)) if isinstance(x, list) else '')
 
-                    reducer = umap.UMAP(n_components=2)
-                    umap_result = reducer.fit_transform(X)
-                    umap_df = pd.DataFrame(umap_result, columns=["UMAP1", "UMAP2"])
-                    st.subheader("UMAP Plot")
-                    st.plotly_chart(px.scatter(umap_df, x="UMAP1", y="UMAP2", title="UMAP"))
-                else:
-                    st.warning("PCA/UMAP requires at least 3 samples and 3 features.")
+st.dataframe(summary_df)
 
-            except Exception as e:
-                st.warning(f"Error in dimensionality reduction: {e}")
+st.markdown("### 🔍 Filter & Customize Summary Table Display")
 
-    except ValueError:
-        st.error("❌ Please enter valid numeric values for filters.")
+# Search bar for disease terms
+search_term = st.text_input("Search for disease or term (case-insensitive):", "")
+
+# Option to show top N or all genes
+max_rows = st.slider("Select number of genes to display (use slider to show top N):", 
+                     min_value=5, max_value=len(summary_df), value=10, step=1)
+
+# Optional sorting: by number of associations
+summary_df["Total Associations"] = summary_df.iloc[:, 1:].apply(lambda x: sum(bool(i) for i in x), axis=1)
+
+# Filter by search term (e.g., disease name)
+if search_term:
+    filtered_df = summary_df[summary_df.apply(
+        lambda row: any(search_term.lower() in str(row[col]).lower() for col in summary_df.columns[1:]),
+        axis=1)]
+else:
+    filtered_df = summary_df
+
+# Sort and slice
+filtered_df = filtered_df.sort_values("Total Associations", ascending=False).drop(columns=["Total Associations"])
+filtered_df = filtered_df.head(max_rows)
+
+# Display the updated summary table
+st.dataframe(filtered_df)
