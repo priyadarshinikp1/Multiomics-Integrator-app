@@ -1,3 +1,4 @@
+# Multi-Omics Integration App
 import os
 import tempfile
 import requests
@@ -26,7 +27,7 @@ st.title("🧬 Multi-Omics Integration Vizzhy App")
 
 with st.sidebar:
     st.markdown("---")
-    st.markdown("**👨‍💻 PRIYADARSHINI**")
+    st.markdown("**👨‍💻 Created by: PRIYADARSHINI**")
     st.markdown("[LinkedIn](https://www.linkedin.com/in/priyadarshini24) | [GitHub](https://github.com/priyadarshinikp1)")
 
 st.markdown("**Developed by Priyadarshini**")
@@ -77,18 +78,12 @@ st.header("🎛️ Filter & Integrate")
 
 if genomics and transcriptomics and proteomics:
     try:
-        # Filter data
         gdf_filtered = gdf[gdf['CADD'] >= cadd_thresh]
         tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) & (tdf['logFC'].abs() >= logfc_thresh)]
         pdf_filtered = pdf[pdf['Intensity'] >= p_intensity_thresh]
 
-        st.success(f"✅ Genomics filtered: {len(gdf_filtered)}")
-        st.success(f"✅ Transcriptomics filtered: {len(tdf_filtered)}")
-        st.success(f"✅ Proteomics filtered: {len(pdf_filtered)}")
-
         union_genes = set(gdf_filtered['Gene']) | set(tdf_filtered['Gene'])
 
-        # Helper functions
         def extract_uniprot_ids(protein_series):
             ids = set()
             for entry in protein_series.dropna():
@@ -115,11 +110,9 @@ if genomics and transcriptomics and proteomics:
                     st.warning(f"UniProt API error: {e}")
             return mapping
 
-        st.info("🔄 Mapping UniProt IDs to gene names via UniProt API...")
         unique_uniprot_ids = extract_uniprot_ids(pdf_filtered['Protein'])
         uniprot_gene_map = map_uniprot_to_gene(unique_uniprot_ids)
 
-        # Expand protein annotations
         expanded_rows = []
         for _, row in pdf_filtered.iterrows():
             for pid in str(row['Protein']).split(';'):
@@ -130,19 +123,12 @@ if genomics and transcriptomics and proteomics:
 
         expanded_protein_df = pd.DataFrame(expanded_rows)
         protein_gene_map = dict(zip(expanded_protein_df['Protein'], expanded_protein_df['GeneName']))
-        st.write(f"🧪 Mapped {len(expanded_protein_df)} proteins to genes")
-        st.dataframe(expanded_protein_df.head())
 
         all_entities = union_genes | set(protein_gene_map.values())
-        st.success(f"🔗 Unique genes/proteins across layers: {len(all_entities)}")
-        st.dataframe(pd.DataFrame({'Genes/Proteins': list(all_entities)}))
 
         results = {}
         raw_assoc_data = []
 
-        # -----------------------------
-        # Enrichment Analyses
-        # -----------------------------
         if run_enrichment:
             st.header("📊 Enrichment Analyses")
             libraries = {
@@ -157,7 +143,6 @@ if genomics and transcriptomics and proteomics:
                     enr = enrichr(gene_list=gene_list_clean, gene_sets=lib, outdir=None)
 
                     if enr.results.empty:
-                        st.warning(f"⚠️ No results from {name}")
                         continue
 
                     df = enr.results.copy()
@@ -165,80 +150,57 @@ if genomics and transcriptomics and proteomics:
                     df = df.rename(columns={"Term": "Pathway", "Genes": "Genes_Involved"})
                     results[name] = df
 
-                    st.subheader(f"📋 {name} - Top Results")
-                    st.dataframe(df[['Pathway', 'P-value', 'Adjusted P-value', 'Overlap', 'Genes_Involved']].head(10))
-
-                    fig = px.bar(
-                        df.head(10),
-                        x="Pathway", y="-log10(pval)",
-                        title=f"Top 10 {name}",
-                        labels={"Pathway": "Term", "-log10(pval)": "-log10(p)"},
-                    )
+                    fig = px.bar(df.head(10), x="Pathway", y="-log10(pval)", title=f"Top 10 {name}")
                     st.plotly_chart(fig)
-
                 except Exception as e:
-                    st.error(f"Error in {name} enrichment: {e}")
+                    st.error(f"Error in {name}: {e}")
 
-        # -----------------------------
-        # Network Visualization
-        # -----------------------------
         if show_network and results:
             st.subheader("🧠 Interactive Omics Network")
+            net = Network(height='800px', width='100%', directed=False)
+            net.force_atlas_2based()
 
-            try:
-                net = Network(height='800px', width='100%', directed=False)
-                net.force_atlas_2based()
+            legend_items = {
+                "Gene": 'gray', "Protein": 'gold',
+                "Pathway": 'skyblue', "Metabolite": 'lightgreen', "Disease": 'lightcoral'
+            }
 
-                legend_items = {
-                    "Gene": 'gray', "Protein": 'gold',
-                    "Pathway": 'skyblue', "Metabolite": 'lightgreen', "Disease": 'lightcoral'
-                }
+            for i, (label, color) in enumerate(legend_items.items()):
+                net.add_node(f"legend_{label}", label=label, shape='box', color=color, size=20, x=-1000, y=-i*50, physics=False, fixed=True)
 
-                for i, (label, color) in enumerate(legend_items.items()):
-                    net.add_node(f"legend_{label}", label=label, shape='box', color=color, size=20, x=-1000, y=-i*50, physics=False, fixed=True)
+            color_map = {
+                "Reactome Pathways": "skyblue",
+                "Disease Associations": "lightcoral",
+                "HMDB Metabolites": "lightgreen"
+            }
 
-                color_map = {
-                    "Reactome Pathways": "skyblue",
-                    "Disease Associations": "lightcoral",
-                    "HMDB Metabolites": "lightgreen"
-                }
+            for name, df in results.items():
+                color = color_map.get(name, "gray")
+                for _, row in df.head(num_pathways_to_show).iterrows():
+                    term = row['Pathway']
+                    net.add_node(term, label=term, color=color)
+                    for gene in row['Genes_Involved'].split(';'):
+                        gene = gene.strip()
+                        if not gene:
+                            continue
+                        net.add_node(gene, label=gene, color='gray')
+                        net.add_edge(gene, term)
+                        matched_proteins = [prot for prot, gname in protein_gene_map.items() if gname == gene]
+                        for prot in matched_proteins:
+                            net.add_node(prot, label=prot, color='gold')
+                            net.add_edge(gene, prot)
+                        raw_assoc_data.append({
+                            'Gene': gene,
+                            'Protein': ';'.join(matched_proteins),
+                            'Pathway': term if name == 'Reactome Pathways' else '',
+                            'Metabolite': term if name == 'HMDB Metabolites' else '',
+                            'Disease': term if name == 'Disease Associations' else ''
+                        })
 
-                for name, df in results.items():
-                    color = color_map.get(name, "gray")
-                    for _, row in df.head(num_pathways_to_show).iterrows():
-                        term = row['Pathway']
-                        net.add_node(term, label=term, color=color)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
+                net.save_graph(tmp_file.name)
+                st.components.v1.html(open(tmp_file.name, 'r', encoding='utf-8').read(), height=800)
 
-                        for gene in row['Genes_Involved'].split(';'):
-                            gene = gene.strip()
-                            if not gene:
-                                continue
-                            net.add_node(gene, label=gene, color='gray')
-                            net.add_edge(gene, term)
-
-                            matched_proteins = [prot for prot, gname in protein_gene_map.items() if gname == gene]
-                            for prot in matched_proteins:
-                                net.add_node(prot, label=prot, color='gold')
-                                net.add_edge(gene, prot)
-
-                            raw_assoc_data.append({
-                                'Gene': gene,
-                                'Protein': ';'.join(matched_proteins),
-                                'Pathway': term if name == 'Reactome Pathways' else '',
-                                'Metabolite': term if name == 'HMDB Metabolites' else '',
-                                'Disease': term if name == 'Disease Associations' else ''
-                            })
-
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as tmp_file:
-                    net.save_graph(tmp_file.name)
-                    st.components.v1.html(open(tmp_file.name, 'r', encoding='utf-8').read(), height=800)
-
-            except Exception as e:
-                st.error(f"Network rendering failed: {e}")
-
-        # -----------------------------
-        # Association Table
-        # -----------------------------
         if show_association_table and raw_assoc_data:
             st.subheader("📄 Gene-Protein-Term Association Summary")
             df = pd.DataFrame(raw_assoc_data)
@@ -262,11 +224,8 @@ if genomics and transcriptomics and proteomics:
 st.header("🧬 UMAP + KMeans Clustering (Multi-Omics)")
 
 try:
-    merged_df = pd.merge(gdf_filtered, tdf_filtered, on='Gene')#, how='inner')
-    merged_df = pd.merge(merged_df, pdf_filtered, on='Gene')#, how='inner')
-
-    st.info(f"🔗 Merged dataset shape: {merged_df.shape}")
-    st.dataframe(merged_df.head())
+    merged_df = pd.merge(gdf_filtered, tdf_filtered, on='Gene', how='inner')
+    merged_df = pd.merge(merged_df, pdf_filtered, on='Gene', how='inner')
 
     genomics_data = merged_df[['CADD']].values
     transcriptomics_data = merged_df[['logFC', 'AveExpr', 'B']].values
@@ -275,17 +234,9 @@ try:
     combined_data = np.concatenate([genomics_data, transcriptomics_data, proteomics_data], axis=1)
     scaler = StandardScaler()
     normalized_data = scaler.fit_transform(combined_data)
-    
-    pca = PCA(n_components=min(5, combined_data.shape[1]))
-    pca_result = pca.fit_transform(normalized_data)
 
-
-    n_neighbors = st.sidebar.slider("UMAP n_neighbors", 5, 50, 15)
-    min_dist = st.sidebar.slider("UMAP min_dist", 0.0, 1.0, 0.3, step=0.05)
-
-    reducer = umap.UMAP(n_neighbors=n_neighbors, min_dist=min_dist, n_components=2, random_state=42)
-    umap_results = reducer.fit_transform(pca_result)
-
+    reducer = umap.UMAP(n_neighbors=15, min_dist=0.3, n_components=2, random_state=42)
+    umap_results = reducer.fit_transform(normalized_data)
 
     n_clusters = st.sidebar.slider("Number of KMeans Clusters", min_value=2, max_value=10, value=5)
     kmeans = KMeans(n_clusters=n_clusters, random_state=42)
@@ -293,24 +244,19 @@ try:
 
     merged_df['Cluster'] = clusters
 
-    # Plot 1: CADD score
     fig, ax = plt.subplots(figsize=(10, 8))
-    scatter = ax.scatter(umap_results[:, 0], umap_results[:, 1], c=merged_df['CADD'], cmap='Spectral', alpha=0.5, s=10)
+    scatter = ax.scatter(umap_results[:, 0], umap_results[:, 1], c=merged_df['CADD'], cmap='Spectral', alpha=0.7, s=40)
     ax.set_title('UMAP Projection Colored by CADD Score')
     ax.set_xlabel('UMAP 1')
     ax.set_ylabel('UMAP 2')
-    
-
     fig.colorbar(scatter, label='CADD Score')
     st.pyplot(fig)
 
-    # Plot 2: Cluster labels
     fig2, ax2 = plt.subplots(figsize=(10, 8))
-    sns.scatterplot(x=umap_results[:, 0], y=umap_results[:, 1], hue=clusters, palette='viridis', ax=ax2)
+    sns.scatterplot(x=umap_results[:, 0], y=umap_results[:, 1], hue=clusters, palette='viridis', ax=ax2, s=60)
     ax2.set_title('UMAP Projection with KMeans Clustering')
     st.pyplot(fig2)
 
-    # Cluster table
     st.subheader("🔍 Clustered Multi-Omics Data")
     st.dataframe(merged_df[['Gene', 'Cluster'] + [col for col in merged_df.columns if col not in ['Gene', 'Cluster']]].head(20))
 
