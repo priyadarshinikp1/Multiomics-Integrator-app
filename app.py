@@ -30,7 +30,6 @@ with st.sidebar:
     st.markdown("**👨‍💻 Created by: PRIYADARSHINI**")
     st.markdown("[LinkedIn](https://www.linkedin.com/in/priyadarshini24) | [GitHub](https://github.com/priyadarshinikp1)")
 
-st.markdown("**Developed by Priyadarshini**")
 
 # -----------------------------
 # File Upload Section
