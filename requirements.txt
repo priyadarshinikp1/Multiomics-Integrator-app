@@ -8,5 +8,4 @@ gseapy
 scikit-learn
 umap-learn
 requests
-bs4
 seaborn
