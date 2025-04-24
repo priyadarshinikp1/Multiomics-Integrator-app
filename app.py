@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="MultiomicsIntegrator", layout="wide")
 st.image("https://raw.githubusercontent.com/priyadarshinikp1/Multiomics-Integrator-app/main/logo.png", width=200)
-st.title("🧬 Omics Integration & Over-Representation Explorer - Vizzhy")
+st.title("Multiomics Integration & Over-Representation Explorer - Vizzhy")
 with st.sidebar:
     st.markdown("---")
     st.markdown("**👨‍💻 Created by:PRIYADARSHINI")
