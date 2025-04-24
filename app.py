@@ -8,7 +8,7 @@ import streamlit.components.v1 as components
 from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Int_Enridb App", layout="wide")
-st.image("https://raw.githubusercontent.com/priyadarshinikp1/Multiomics-Integrator-app/blob/bb95de605fa441ec079e5a4ed2cc3afaa476c4d6/logo.png", width=200)
+st.image("https://raw.githubusercontent.com/priyadarshinikp1/Multiomics-Integrator-app/blob/main/logo.png", width=200)
 st.title("🧬 Omics Integration & Over-Representation Explorer - Vizzhy")
 with st.sidebar:
     st.markdown("---")
