@@ -232,7 +232,7 @@ if genomics and transcriptomics and proteomics:
 
         # 🧪 Dimensionality Reduction: PCA + UMAP
         if transcriptomics:
-            st.header("🔍 Transcriptomics: PCA and UMAP")
+            st.header("PCA and UMAP")
             try:
                 expr_data = tdf.dropna()
                 feature_cols = [col for col in expr_data.columns if expr_data[col].dtype != 'object']
@@ -243,13 +243,13 @@ if genomics and transcriptomics and proteomics:
                     pca_result = pca.fit_transform(X)
                     pca_df = pd.DataFrame(pca_result, columns=["PC1", "PC2"])
                     st.subheader("PCA Plot")
-                    st.plotly_chart(px.scatter(pca_df, x="PC1", y="PC2", title="PCA of Transcriptomics"))
+                    st.plotly_chart(px.scatter(pca_df, x="PC1", y="PC2", title="PCA"))
 
                     reducer = umap.UMAP(n_components=2)
                     umap_result = reducer.fit_transform(X)
                     umap_df = pd.DataFrame(umap_result, columns=["UMAP1", "UMAP2"])
                     st.subheader("UMAP Plot")
-                    st.plotly_chart(px.scatter(umap_df, x="UMAP1", y="UMAP2", title="UMAP of Transcriptomics"))
+                    st.plotly_chart(px.scatter(umap_df, x="UMAP1", y="UMAP2", title="UMAP"))
                 else:
                     st.warning("PCA/UMAP requires at least 3 samples and 3 features.")
 
