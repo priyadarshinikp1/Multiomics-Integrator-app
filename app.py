@@ -40,21 +40,6 @@ genomics = st.file_uploader("Upload Genomics CSV", type="csv")
 transcriptomics = st.file_uploader("Upload Transcriptomics CSV", type="csv")
 proteomics = st.file_uploader("Upload Proteomics CSV", type="csv")
 
-if genomics:
-    gdf = pd.read_csv(genomics)
-    st.subheader("Genomics Data Preview")
-    st.dataframe(gdf.head())
-
-if transcriptomics:
-    tdf = pd.read_csv(transcriptomics)
-    st.subheader("Transcriptomics Data Preview")
-    st.dataframe(tdf.head())
-
-if proteomics:
-    pdf = pd.read_csv(proteomics)
-    st.subheader("Proteomics Data Preview")
-    st.dataframe(pdf.head())
-
 # -----------------------------
 # Sidebar Filters
 # -----------------------------
@@ -69,6 +54,31 @@ run_enrichment = st.sidebar.checkbox("Run Enrichment Analyses", value=True)
 show_network = st.sidebar.checkbox("Show Network Visualization", value=True)
 show_association_table = st.sidebar.checkbox("Show Association Table", value=True)
 num_pathways_to_show = st.sidebar.slider("Number of Pathways to Display in Network", min_value=1, max_value=100, value=10)
+
+# -----------------------------
+# Preview Filtered Data: Top N Rows
+# -----------------------------
+preview_n = st.sidebar.slider("Preview Top N Filtered Rows", 5, 50, 10)
+
+# Display Filtered Data Previews
+st.subheader("🔍 Filtered Data Preview")
+
+if genomics and transcriptomics and proteomics:
+    try:
+        gdf_filtered = gdf[gdf['CADD'] >= cadd_thresh]
+        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) & (tdf['logFC'].abs() >= logfc_thresh)]
+        pdf_filtered = pdf[pdf['Intensity'] >= p_intensity_thresh]
+        
+        # Display filtered data for all three omics
+        st.markdown("**Genomics**")
+        st.dataframe(gdf_filtered.head(preview_n))  # Preview the top N filtered rows for genomics
+        st.markdown("**Transcriptomics**")
+        st.dataframe(tdf_filtered.head(preview_n))  # Preview the top N filtered rows for transcriptomics
+        st.markdown("**Proteomics**")
+        st.dataframe(pdf_filtered.head(preview_n))  # Preview the top N filtered rows for proteomics
+
+    except Exception as e:
+        st.error(f"Integration error: {e}")
 
 # -----------------------------
 # Filtering and Integration
