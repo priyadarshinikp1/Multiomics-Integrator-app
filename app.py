@@ -76,7 +76,7 @@ st.subheader("🔍 Filtered Data Preview")
 if genomics and transcriptomics and proteomics:
     try:
         gdf_filtered = gdf[gdf['CADD'] >= cadd_thresh]
-        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) & ((tdf['logFC'] >= logfc_thresh) | (tdf['logFC'] <= -logfc_thresh))]
+        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) & (tdf['logFC'] >= logfc_thresh)]
         pdf_filtered = pdf[pdf['Intensity'] >= p_intensity_thresh]
         
         # Display filtered data for all three omics
