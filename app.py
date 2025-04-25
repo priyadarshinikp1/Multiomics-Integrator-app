@@ -40,6 +40,16 @@ genomics = st.file_uploader("Upload Genomics CSV", type="csv")
 transcriptomics = st.file_uploader("Upload Transcriptomics CSV", type="csv")
 proteomics = st.file_uploader("Upload Proteomics CSV", type="csv")
 
+
+if genomics:
+    gdf = pd.read_csv(genomics)
+
+if transcriptomics:
+    tdf = pd.read_csv(transcriptomics)
+
+if proteomics:
+    pdf = pd.read_csv(proteomics)
+
 # -----------------------------
 # Sidebar Filters
 # -----------------------------
