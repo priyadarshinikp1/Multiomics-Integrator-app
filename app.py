@@ -76,7 +76,7 @@ st.subheader("🔍 Filtered Data Preview")
 if genomics and transcriptomics and proteomics:
     try:
         gdf_filtered = gdf[gdf['CADD'] >= cadd_thresh]
-        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh) 
+        tdf_filtered = tdf[(tdf['p_value'] <= t_pval_thresh)]
         
     # Filter Transcriptomics data based on logFC threshold
         if logfc_thresh > 0:
